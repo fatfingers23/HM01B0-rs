@@ -1,0 +1,6 @@
+[package]
+name = "rp_2040"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]

@@ -1,0 +1,11 @@
+[package]
+name = "hm01b0"
+version = "0.1.0"
+edition = "2021"
+description = "A no_std libary for the HM01B0 camera"
+repository = "https://github.com/fatfingers23/HM01B0-rs"
+categories = ["no-std", "embedded"]
+
+[dependencies]
+embedded-hal = { version = "1.0.0" }
+embedded-hal-async = { version = "1.0.0" }
