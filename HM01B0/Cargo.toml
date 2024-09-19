@@ -1,5 +1,6 @@
 [package]
 name = "hm01b0"
+authors = ["Bailey Townsend"]
 version = "0.1.0"
 edition = "2021"
 description = "A no_std libary for the HM01B0 camera"
