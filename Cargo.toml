@@ -1,0 +1,2 @@
+[workspace]
+members = ["HM01B0", "examples/rp_2040"]
