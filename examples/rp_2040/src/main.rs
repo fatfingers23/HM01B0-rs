@@ -33,17 +33,11 @@ async fn main(_spawner: Spawner) {
     //setup PIO to read data from the camera
     // embassy_rp::pio::Config
 
-    let Pio {
-        mut common,
-        irq3,
-        mut sm0,
-        mut sm1,
-        mut sm2,
-        ..
-    } = Pio::new(p.PIO0, PioIrqs);
+    let _pio = Pio::new(p.PIO0, PioIrqs);
 
-    // let hm01b0 = HM01B0::new(i2c, p.PIO0, PictureSize::Size320x240, DataBits::Bits8);
-
+    info!("Before init");
+    let hm01b0 = HM01B0::new(i2c, PictureSize::Size320x240, DataBits::Bits8).await;
+    info!("After init");
     let delay = Duration::from_secs(1);
 
     loop {

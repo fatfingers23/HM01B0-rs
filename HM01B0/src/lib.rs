@@ -2,16 +2,17 @@
 
 use core::ops::Add;
 use defmt::*;
-use embassy_rp::gpio::Pin;
+use embassy_rp::flash::Instance;
 use embassy_rp::peripherals::{PIO0, PIO1};
 use embassy_rp::rom_data::float_funcs::int_to_float;
 use embassy_rp::{pac::pio::Pio, Peripherals};
+use embedded_hal::i2c::ErrorType;
 use embedded_hal_async::i2c::I2c;
 
 const HM01B0_ADDR: u8 = 0x24;
 
 pub enum Addresses {
-    ModelId = 0x01b0,
+    ModelId = 0x0000,
 }
 
 pub enum PioInstance {
@@ -48,15 +49,16 @@ where
     I: I2c,
 {
     i2c: I,
-    pio: Pio,
+    // pio: Pio<'_, P>,
     size: PictureSize,
 }
 
 impl<I> HM01B0<I>
 where
-    I: I2c,
+    I: I2c
 {
-    pub fn new(mut i2c: I, pio: Pio, size: PictureSize, data_bits: DataBits) -> Self {
+    pub async fn new(mut i2c: I, size: PictureSize, data_bits: DataBits) -> Self where <I as embedded_hal::i2c::ErrorType>::Error: Format
+    {
         let config = match size {
             PictureSize::Size320x320 => I2CConfig {
                 readout_x_val: 0x01,
@@ -107,9 +109,31 @@ where
         //     pwm_set_chan_level(mclk_slice_num, mclk_channel, 2);
         //     pwm_set_enabled(mclk_slice_num, true);
         // }
+        info!("Configured");
         let mut result = [u8::MAX];
-        i2c.write_read(HM01B0_ADDR, &[Addresses::ModelId as u8], &mut result);
-        info!("{:?}", result);
-        Self { i2c, pio, size }
+        
+        let model_read = i2c.write_read(HM01B0_ADDR, &[Addresses::ModelId as u8], &mut result).await;
+        info!("After read");
+
+        match model_read {
+            Ok(_) => {
+                info!("{:?}", result);
+            }
+            Err(e) => {
+                error!("{:?}", e)
+            }
+        }
+
+        Self { i2c, size }
     }
+    fn write_u16_le(self, bytes: &mut [u8; 2], value: u16) {
+        bytes[0] = (value & 0xFF) as u8;        // Lower byte
+        bytes[1] = (value >> 8) as u8;          // Higher byte
+    }
+
+    fn read_u16_le(self, bytes: &[u8; 2]) -> u16 {
+        (bytes[1] as u16) << 8 | (bytes[0] as u16)
+    }
+
 }
+
