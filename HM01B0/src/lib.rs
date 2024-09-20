@@ -17,9 +17,16 @@ use fixed::FixedU16;
 const HM01B0_ADDR: u8 = 0x24;
 
 pub enum Addresses {
-    ModelId = 0x0000,
-    SoftwareReset = 0x0103,
+    BitControl = 0x3059,
+    BinningMode = 0x0390,
+    FrameLengthLines = 0x0340,
+    LineLength = 0x0342,
     ModeSelect = 0x0100,
+    ModelId = 0x0000,
+    QVGAEnable = 0x3010,
+    ReadoutX = 0x0383,
+    ReadoutY = 0x0387,
+    SoftwareReset = 0x0103,
 }
 
 //TODO untested
@@ -124,7 +131,7 @@ where
 
         let mut hm01b0 = Self { i2c, size };
 
-        match hm01b0.hm01b0_read_reg16(Addresses::ModelId as u16).await {
+        match hm01b0.read_reg16(Addresses::ModelId as u16).await {
             Ok(model) => {
                 debug!("Camera Model ID: {:?}", model);
                 if model != 0x01b0 {
@@ -136,18 +143,28 @@ where
             }
         }
 
-        hm01b0.hm01b0_reset().await;
+        hm01b0.reset().await;
+
+        let bit_control = match data_bits {
+            DataBits::Bits8 => 0x02,
+            DataBits::Bits4 => 0x42,
+            DataBits::Bits1 => 0x22,
+        };
+
+        //Set camera config to the device
+        hm01b0
+            .write_reg8(Addresses::BitControl as u16, bit_control)
+            .await
+            .unwrap();
 
         hm01b0
     }
 
-    async fn hm01b0_reset(&mut self) {
-        self.hm01b0_write_reg8(SoftwareReset as u16, 0x01)
-            .await
-            .unwrap();
+    async fn reset(&mut self) {
+        self.write_reg8(SoftwareReset as u16, 0x01).await.unwrap();
 
         for attempt in 1..=10 {
-            match self.rhm01b0_read_reg8(ModeSelect as u16).await {
+            match self.read_reg8(ModeSelect as u16).await {
                 Ok(result) => {
                     debug!("Status: {:?}", result);
                     if result == 0x00 {
@@ -174,7 +191,7 @@ where
         ((bytes[0] as u16) << 8) | (bytes[1] as u16)
     }
 
-    async fn hm01b0_read_reg16(&mut self, address: u16) -> Result<u16, Error> {
+    async fn read_reg16(&mut self, address: u16) -> Result<u16, Error> {
         let mut address_bytes = [0u8; 2];
         let mut result_bytes = [0xffu8; 2];
 
@@ -189,7 +206,7 @@ where
         Ok(self.read_u16(&result_bytes))
     }
 
-    async fn rhm01b0_read_reg8(&mut self, address: u16) -> Result<u8, Error> {
+    async fn read_reg8(&mut self, address: u16) -> Result<u8, Error> {
         let mut address_bytes = [0u8; 2];
         let mut result = [0xffu8; 1];
 
@@ -206,7 +223,7 @@ where
         Ok(result[0])
     }
 
-    async fn hm01b0_write_reg8(&mut self, address: u16, value: u8) -> Result<(), Error> {
+    async fn write_reg8(&mut self, address: u16, value: u8) -> Result<(), Error> {
         let mut data = [0u8; 3];
 
         // Write the 16-bit address in big-endian format
