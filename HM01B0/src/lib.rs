@@ -151,8 +151,3 @@ where
     }
 }
 
-
-// let model_read_result = hm01b0_read_reg16(&mut i2c, ModelId as u16);
-
-
-
