@@ -8,6 +8,8 @@ use embassy_rp::rom_data::float_funcs::int_to_float;
 use embassy_rp::{pac::pio::Pio, Peripherals};
 use embedded_hal::i2c::ErrorType;
 use embedded_hal_async::i2c::I2c;
+use log::info;
+use crate::Addresses::ModelId;
 
 const HM01B0_ADDR: u8 = 0x24;
 
@@ -110,30 +112,49 @@ where
         //     pwm_set_enabled(mclk_slice_num, true);
         // }
         info!("Configured");
-        let mut result = [u8::MAX];
-        
-        let model_read = i2c.write_read(HM01B0_ADDR, &[Addresses::ModelId as u8], &mut result).await;
-        info!("After read");
 
-        match model_read {
-            Ok(_) => {
-                info!("{:?}", result);
-            }
-            Err(e) => {
-                error!("{:?}", e)
-            }
-        }
+        // i2c.write(HM01B0_ADDR, &[Addresses::ModelId as u8, 0x0000]).await.unwrap();
+        // info!("after write");
+        // i2c.read(HM01B0_ADDR, &mut result ).await.unwrap();
+        // let idk =  (result[0] as u16) << 8 | (result[0] as u16);
+        // 
+        // info!("{:?}", idk);
+        // info!("After read");
+
+        let mut address_bytes = [0u8; 2];
+        let mut result_bytes = [0xffu8; 2];
+
+        // Manually write u16 to the byte array in little-endian format
+        write_u16_le(&mut address_bytes, Addresses::ModelId as u16);
+
+        // Write the address to the sensor
+        i2c.write(HM01B0_ADDR, &address_bytes).await.unwrap();
+
+        // Read 2 bytes from the sensor
+        i2c.read(HM01B0_ADDR, &mut result_bytes).await.unwrap();
+        info!("{:?}", read_u16_le(&result_bytes));
+
+        // let model_read = i2c.write_read(HM01B0_ADDR, &[Addresses::ModelId as u8], &mut result).await;
+
+        // match model_read {
+        //     Ok(_) => {
+        //         info!("{:?}", result);
+        //     }
+        //     Err(e) => {
+        //         error!("{:?}", e)
+        //     }
+        // }
 
         Self { i2c, size }
     }
-    fn write_u16_le(self, bytes: &mut [u8; 2], value: u16) {
-        bytes[0] = (value & 0xFF) as u8;        // Lower byte
-        bytes[1] = (value >> 8) as u8;          // Higher byte
-    }
 
-    fn read_u16_le(self, bytes: &[u8; 2]) -> u16 {
-        (bytes[1] as u16) << 8 | (bytes[0] as u16)
-    }
+}
+fn write_u16_le(bytes: &mut [u8; 2], value: u16) {
+    bytes[0] = (value & 0xFF) as u8;        // Lower byte
+    bytes[1] = (value >> 8) as u8;          // Higher byte
+}
 
+fn read_u16_le(bytes: &[u8; 2]) -> u16 {
+    (bytes[1] as u16) << 8 | (bytes[0] as u16)
 }
 
