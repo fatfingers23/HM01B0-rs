@@ -1,11 +1,8 @@
 #![no_std]
 
-
-use embassy_rp::peripherals::{PIO0, PIO1};
-use embassy_rp::{ Peripherals};
+// use embassy_rp::peripherals::{PIO0, PIO1};
 use embassy_rp::i2c::Error;
-use embedded_hal::i2c::{ SevenBitAddress};
-use embedded_hal::i2c::I2c;
+use embedded_hal_async::i2c::I2c;
 use defmt::*;
 
 const HM01B0_ADDR: u8 = 0x24;
@@ -57,9 +54,8 @@ where
     I: I2c
 {
 
-    pub fn new(i2c: &'a mut I, size: PictureSize, data_bits: DataBits) -> Self
+    pub async fn new(i2c: &'a mut I, size: PictureSize, data_bits: DataBits) -> Self
     {
-        info!("1");
         let config = match size {
             PictureSize::Size320x320 => I2CConfig {
                 readout_x_val: 0x01,
@@ -113,9 +109,9 @@ where
 
         let mut hm01b0 = Self { i2c, size };
         
-        match hm01b0.hm01b0_read_reg16(Addresses::ModelId as u16) {
+        match hm01b0.hm01b0_read_reg16(Addresses::ModelId as u16).await {
             Ok(model) => {
-                info!("{:?}", model);
+                debug!("Camera Model ID: {:?}", model);
                 if model != 0x01b0{
                     error!("Invalid model id!")
                 }
@@ -126,32 +122,31 @@ where
         hm01b0
     }
 
-    fn write_u16_be(&mut self, bytes: &mut [u8; 2], value: u16) {
+    fn write_u16(&mut self, bytes: &mut [u8; 2], value: u16) {
         bytes[0] = (value >> 8) as u8;   // Higher byte
         bytes[1] = (value & 0xFF) as u8; // Lower byte
     }
 
-    fn read_u16_be(&mut self, bytes: &[u8; 2]) -> u16 {
+    fn read_u16(&mut self, bytes: &[u8; 2]) -> u16 {
         ((bytes[0] as u16) << 8) | (bytes[1] as u16)
     }
 
-     fn hm01b0_read_reg16(
+     async fn hm01b0_read_reg16(
         &mut self,
         address: u16
     ) -> Result<u16, Error> {
         let mut address_bytes = [0u8; 2];
         let mut result_bytes = [0xffu8; 2];
 
-        // Manually write u16 to the byte array in little-endian format
-        self.write_u16_be(&mut address_bytes, address);
+        self.write_u16(&mut address_bytes, address);
 
         // Write the address to the sensor
-        self.i2c.write(HM01B0_ADDR, &address_bytes);
+        self.i2c.write(HM01B0_ADDR, &address_bytes).await.unwrap();
 
         // Read 2 bytes from the sensor
-        self.i2c.read(HM01B0_ADDR, &mut result_bytes);
-        // Manually read the u16 value from the result bytes in little-endian format
-        Ok(self.read_u16_be(&result_bytes))
+        self.i2c.read(HM01B0_ADDR, &mut result_bytes).await.unwrap();
+        // Manually read the u16 value from the result bytes
+        Ok(self.read_u16(&result_bytes))
 
     }
 }
