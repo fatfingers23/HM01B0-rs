@@ -1,2 +1,9 @@
 [workspace]
-members = ["HM01B0", "examples/rp_2040"]
+members = [
+    "HM01B0",
+    "examples/rp_2040"]
+
+resolver = "2"
+
+[workspace.package]
+edition = "2021"

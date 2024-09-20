@@ -17,5 +17,11 @@ embassy-rp = { version = "0.2.0", git = "https://github.com/embassy-rs/embassy.g
     "critical-section-impl",
     "rp2040",
 ] }
+embassy-time = { version = "0.3.2", git = "https://github.com/embassy-rs/embassy.git", rev = "f0a86070512ad739641cee7d9fa39d63f5c8a9f6", features = [
+    "defmt",
+    "defmt-timestamp-uptime",
+] }
+fixed = "1.23.1"
+fixed-macro = "1.2"
 defmt = "0.3"
 log = "0.4.22"

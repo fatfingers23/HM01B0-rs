@@ -1371,8 +1371,11 @@ version = "0.1.0"
 dependencies = [
  "defmt",
  "embassy-rp",
+ "embassy-time",
  "embedded-hal 1.0.0",
  "embedded-hal-async",
+ "fixed",
+ "fixed-macro",
  "log",
 ]
 

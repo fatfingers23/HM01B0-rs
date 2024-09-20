@@ -7,9 +7,12 @@ use embassy_rp::bind_interrupts;
 use embassy_rp::i2c::{self, Config, InterruptHandler};
 use embassy_rp::peripherals::I2C0;
 use embassy_rp::peripherals::PIO0;
-use embassy_rp::pio::{Pio};
+use embassy_rp::pio::Pio;
+use embassy_rp::pwm::Pwm;
 use embassy_time::{Duration, Timer};
-use hm01b0::{DataBits, PictureSize, HM01B0};
+use fixed::types::extra::U4;
+use fixed::FixedU16;
+use hm01b0::{get_mclk_pwm_config, DataBits, PictureSize, HM01B0};
 use {defmt_rtt as _, panic_probe as _};
 
 bind_interrupts!(struct Irqs {
@@ -32,8 +35,18 @@ async fn main(_spawner: Spawner) {
 
     let _pio = Pio::new(p.PIO0, PioIrqs);
 
+    // let mut c: embassy_rp::pwm::Config = get_mclk_pwm_config();
+    // let mut pwm = Pwm::new_output_b(p.PWM_SLICE4, p.PIN_10, c.clone());
+
     info!("Before init");
-    let hm01b0 = HM01B0::new(&mut i2c, PictureSize::Size320x320, DataBits::Bits1).await;
+    let hm01b0 = HM01B0::new(
+        &mut i2c,
+        PictureSize::Size320x320,
+        DataBits::Bits1,
+        None,
+        None,
+    )
+    .await;
     info!("After init");
     let delay = Duration::from_secs(1);
 
@@ -42,6 +55,3 @@ async fn main(_spawner: Spawner) {
     //     Timer::after(delay).await;
     // }
 }
-
-
-
