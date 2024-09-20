@@ -1,15 +1,12 @@
 #![no_std]
 
-use core::ops::Add;
-use defmt::*;
-use embassy_rp::flash::Instance;
+
 use embassy_rp::peripherals::{PIO0, PIO1};
-use embassy_rp::rom_data::float_funcs::int_to_float;
-use embassy_rp::{pac::pio::Pio, Peripherals};
-use embedded_hal::i2c::ErrorType;
-use embedded_hal_async::i2c::I2c;
-use log::info;
-use crate::Addresses::ModelId;
+use embassy_rp::{ Peripherals};
+use embassy_rp::i2c::Error;
+use embedded_hal::i2c::{ SevenBitAddress};
+use embedded_hal::i2c::I2c;
+use defmt::*;
 
 const HM01B0_ADDR: u8 = 0x24;
 
@@ -46,21 +43,23 @@ struct I2CConfig {
     // bit_control_val: u8,         // 0x3059
 }
 
-pub struct HM01B0<I>
+pub struct HM01B0<'a, I>
 where
     I: I2c,
 {
-    i2c: I,
+    i2c: &'a mut I,
     // pio: Pio<'_, P>,
     size: PictureSize,
 }
 
-impl<I> HM01B0<I>
+impl<'a, I> HM01B0<'a, I>
 where
     I: I2c
 {
-    pub async fn new(mut i2c: I, size: PictureSize, data_bits: DataBits) -> Self where <I as embedded_hal::i2c::ErrorType>::Error: Format
+
+    pub fn new(i2c: &'a mut I, size: PictureSize, data_bits: DataBits) -> Self
     {
+        info!("1");
         let config = match size {
             PictureSize::Size320x320 => I2CConfig {
                 readout_x_val: 0x01,
@@ -111,50 +110,54 @@ where
         //     pwm_set_chan_level(mclk_slice_num, mclk_channel, 2);
         //     pwm_set_enabled(mclk_slice_num, true);
         // }
-        info!("Configured");
 
-        // i2c.write(HM01B0_ADDR, &[Addresses::ModelId as u8, 0x0000]).await.unwrap();
-        // info!("after write");
-        // i2c.read(HM01B0_ADDR, &mut result ).await.unwrap();
-        // let idk =  (result[0] as u16) << 8 | (result[0] as u16);
-        // 
-        // info!("{:?}", idk);
-        // info!("After read");
+        let mut hm01b0 = Self { i2c, size };
+        
+        match hm01b0.hm01b0_read_reg16(Addresses::ModelId as u16) {
+            Ok(model) => {
+                info!("{:?}", model);
+                if model != 0x01b0{
+                    error!("Invalid model id!")
+                }
+            } Err(e) => {
+                error!("{:?}", e)
+            },
+        }
+        hm01b0
+    }
 
+    fn write_u16_be(&mut self, bytes: &mut [u8; 2], value: u16) {
+        bytes[0] = (value >> 8) as u8;   // Higher byte
+        bytes[1] = (value & 0xFF) as u8; // Lower byte
+    }
+
+    fn read_u16_be(&mut self, bytes: &[u8; 2]) -> u16 {
+        ((bytes[0] as u16) << 8) | (bytes[1] as u16)
+    }
+
+     fn hm01b0_read_reg16(
+        &mut self,
+        address: u16
+    ) -> Result<u16, Error> {
         let mut address_bytes = [0u8; 2];
         let mut result_bytes = [0xffu8; 2];
 
         // Manually write u16 to the byte array in little-endian format
-        write_u16_le(&mut address_bytes, Addresses::ModelId as u16);
+        self.write_u16_be(&mut address_bytes, address);
 
         // Write the address to the sensor
-        i2c.write(HM01B0_ADDR, &address_bytes).await.unwrap();
+        self.i2c.write(HM01B0_ADDR, &address_bytes);
 
         // Read 2 bytes from the sensor
-        i2c.read(HM01B0_ADDR, &mut result_bytes).await.unwrap();
-        info!("{:?}", read_u16_le(&result_bytes));
+        self.i2c.read(HM01B0_ADDR, &mut result_bytes);
+        // Manually read the u16 value from the result bytes in little-endian format
+        Ok(self.read_u16_be(&result_bytes))
 
-        // let model_read = i2c.write_read(HM01B0_ADDR, &[Addresses::ModelId as u8], &mut result).await;
-
-        // match model_read {
-        //     Ok(_) => {
-        //         info!("{:?}", result);
-        //     }
-        //     Err(e) => {
-        //         error!("{:?}", e)
-        //     }
-        // }
-
-        Self { i2c, size }
     }
-
-}
-fn write_u16_le(bytes: &mut [u8; 2], value: u16) {
-    bytes[0] = (value & 0xFF) as u8;        // Lower byte
-    bytes[1] = (value >> 8) as u8;          // Higher byte
 }
 
-fn read_u16_le(bytes: &[u8; 2]) -> u16 {
-    (bytes[1] as u16) << 8 | (bytes[0] as u16)
-}
+
+// let model_read_result = hm01b0_read_reg16(&mut i2c, ModelId as u16);
+
+
 
