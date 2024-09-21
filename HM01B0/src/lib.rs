@@ -19,7 +19,10 @@ const HM01B0_ADDR: u8 = 0x24;
 pub enum Addresses {
     BitControl = 0x3059,
     BinningMode = 0x0390,
+    OSCClockDiver = 0x3060,
     FrameLengthLines = 0x0340,
+    GroupParameterHold = 0x0104,
+    IntegrationTimeInLines = 0x0202,
     LineLength = 0x0342,
     ModeSelect = 0x0100,
     ModelId = 0x0000,
@@ -158,6 +161,60 @@ where
             .unwrap();
 
         hm01b0
+            .write_reg8(Addresses::ReadoutX as u16, config.readout_x_val)
+            .await
+            .unwrap();
+
+        hm01b0
+            .write_reg8(Addresses::ReadoutY as u16, config.readout_y_val)
+            .await
+            .unwrap();
+
+        hm01b0
+            .write_reg8(Addresses::BinningMode as u16, config.binning_mode_val)
+            .await
+            .unwrap();
+
+        hm01b0
+            .write_reg8(Addresses::QVGAEnable as u16, config.qvga_win_en_val)
+            .await
+            .unwrap();
+
+        hm01b0
+            .write_reg16(
+                Addresses::FrameLengthLines as u16,
+                config.frame_length_lines_val,
+            )
+            .await
+            .unwrap();
+
+        hm01b0
+            .write_reg16(Addresses::LineLength as u16, config.line_length_pclk_val)
+            .await
+            .unwrap();
+
+        // OSC_CLK_DIV
+        hm01b0
+            .write_reg8(Addresses::OSCClockDiver as u16, 0x08 | 0)
+            .await
+            .unwrap();
+
+        // INTEGRATION_H
+        hm01b0
+            .write_reg8(
+                Addresses::IntegrationTimeInLines as u16,
+                (config.line_length_pclk_val / 2) as u8,
+            )
+            .await
+            .unwrap();
+
+        // GRP_PARAM_HOLD
+        hm01b0
+            .write_reg8(Addresses::GroupParameterHold as u16, 0x01)
+            .await
+            .unwrap();
+
+        hm01b0
     }
 
     async fn reset(&mut self) {
@@ -182,35 +239,43 @@ where
         }
     }
 
-    fn write_u16(&mut self, bytes: &mut [u8; 2], value: u16) {
-        bytes[0] = (value >> 8) as u8; // Higher byte
-        bytes[1] = (value & 0xFF) as u8; // Lower byte
-    }
-
-    fn read_u16(&mut self, bytes: &[u8; 2]) -> u16 {
-        ((bytes[0] as u16) << 8) | (bytes[1] as u16)
-    }
-
     async fn read_reg16(&mut self, address: u16) -> Result<u16, Error> {
         let mut address_bytes = [0u8; 2];
         let mut result_bytes = [0xffu8; 2];
 
-        self.write_u16(&mut address_bytes, address);
+        address_bytes[0] = (address >> 8) as u8; // Higher byte
+        address_bytes[1] = (address & 0xFF) as u8; // Lower byte
 
         // Write the address to the sensor
         self.i2c.write(HM01B0_ADDR, &address_bytes).await.unwrap();
 
         // Read 2 bytes from the sensor
         self.i2c.read(HM01B0_ADDR, &mut result_bytes).await.unwrap();
+
         // Manually read the u16 value from the result bytes
-        Ok(self.read_u16(&result_bytes))
+        let result = ((result_bytes[0] as u16) << 8) | (result_bytes[1] as u16);
+        Ok(result)
+    }
+
+    async fn write_reg16(&mut self, address: u16, value: u16) -> Result<(), Error> {
+        let mut data = [0u8; 4];
+
+        // Write the 16-bit address
+        data[0] = (address >> 8) as u8; // High byte of address
+        data[1] = (address & 0xFF) as u8; // Low byte of address
+
+        data[2] = (value >> 8) as u8;
+        data[3] = (value & 0xFF) as u8;
+
+        self.i2c.write(HM01B0_ADDR, &data).await.unwrap();
+        Ok(())
     }
 
     async fn read_reg8(&mut self, address: u16) -> Result<u8, Error> {
         let mut address_bytes = [0u8; 2];
         let mut result = [0xffu8; 1];
 
-        // Write the 16-bit address in big-endian format
+        // Write the 16-bit address in
         address_bytes[0] = (address >> 8) as u8; // High byte
         address_bytes[1] = (address & 0xFF) as u8; // Low byte
 
