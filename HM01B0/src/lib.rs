@@ -5,8 +5,8 @@ use crate::Addresses::{ModeSelect, SoftwareReset};
 use defmt::*;
 use embassy_rp::gpio::{Output, Pin};
 use embassy_rp::i2c::Error;
-use embassy_rp::pwm;
 use embassy_rp::pwm::Pwm;
+use embassy_rp::{pio, pwm};
 use embassy_time::{Duration, Timer};
 use embedded_hal::digital::OutputPin;
 use embedded_hal_async::i2c::I2c;
@@ -54,13 +54,25 @@ pub enum PictureSize {
 }
 
 //TODO find a better name for this and what its called or at lest an explanation from the data sheet
+#[derive(Clone, Copy)]
 pub enum DataBits {
     Bits8,
     Bits4,
     Bits1,
 }
 
-struct I2CConfig {
+impl DataBits {
+    pub fn to_u8(self) -> u8 {
+        match self {
+            DataBits::Bits8 => 8,
+            DataBits::Bits4 => 4,
+            DataBits::Bits1 => 1,
+        }
+    }
+}
+
+#[derive(Clone)]
+struct Config {
     readout_x_val: u8,           // 0x0383
     readout_y_val: u8,           // 0x0387
     binning_mode_val: u8,        // 0x0390
@@ -78,6 +90,8 @@ where
     i2c: &'a mut I,
     // pio: Pio<'_, P>,
     size: PictureSize,
+    config: Config,
+    pub num_pclk_per_px: u8,
 }
 
 impl<'a, I> HM01B0<'a, I>
@@ -92,7 +106,7 @@ where
         mclk_pwm: Option<Pwm<'a>>,
     ) -> Self {
         let config = match size {
-            PictureSize::Size320x320 => I2CConfig {
+            PictureSize::Size320x320 => Config {
                 readout_x_val: 0x01,
                 readout_y_val: 0x01,
                 binning_mode_val: 0x00,
@@ -101,7 +115,7 @@ where
                 line_length_pclk_val: 0x0178,
                 num_border_px: 2,
             },
-            PictureSize::Size320x240 => I2CConfig {
+            PictureSize::Size320x240 => Config {
                 readout_x_val: 0x01,
                 readout_y_val: 0x01,
                 binning_mode_val: 0x00,
@@ -110,7 +124,7 @@ where
                 line_length_pclk_val: 0x0178,
                 num_border_px: 2,
             },
-            PictureSize::Size160x120 => I2CConfig {
+            PictureSize::Size160x120 => Config {
                 readout_x_val: 0x03,
                 readout_y_val: 0x03,
                 binning_mode_val: 0x03,
@@ -132,7 +146,18 @@ where
         // let mut c: embassy_rp::pwm::Config = get_mclk_pwm_config();
         // let mut pwm = Pwm::new_output_b(p.PWM_SLICE4, p.PIN_10, c.clone());
 
-        let mut hm01b0 = Self { i2c, size };
+        let num_pclk_per_px = match data_bits {
+            DataBits::Bits8 => 1,
+            DataBits::Bits4 => 2,
+            DataBits::Bits1 => 8,
+        };
+
+        let mut hm01b0 = Self {
+            i2c,
+            size,
+            config: config.clone(),
+            num_pclk_per_px,
+        };
 
         match hm01b0.read_reg16(Addresses::ModelId as u16).await {
             Ok(model) => {
