@@ -4,10 +4,11 @@
 use defmt::*;
 use embassy_executor::Spawner;
 use embassy_rp::bind_interrupts;
+use embassy_rp::gpio::Level;
 use embassy_rp::i2c::{self, Config, InterruptHandler};
 use embassy_rp::peripherals::I2C0;
 use embassy_rp::peripherals::PIO0;
-use embassy_rp::pio::Pio;
+use embassy_rp::pio::{Direction, Pio};
 use embassy_time::Duration;
 use hm01b0::{DataBits, PictureSize, HM01B0};
 use pio::WaitSource::GPIO;
@@ -95,8 +96,17 @@ async fn main(_spawner: Spawner) {
     assembler.bind(&mut wrap_source);
     let pio_program = assembler.assemble_with_wrap(wrap_source, wrap_target);
 
+    let vsync = common.make_pio_pin(p.PIN_6);
+    let hsync = common.make_pio_pin(p.PIN_7);
+    let pclk = common.make_pio_pin(p.PIN_8);
+    sm.set_pins(Level::Low, &[&vsync, &hsync, &pclk]);
+    sm.set_pin_dirs(Direction::Out, &[&vsync, &hsync, &pclk]);
     let mut pio_config: embassy_rp::pio::Config<'_, PIO0> = embassy_rp::pio::Config::default();
-    pio_config.use_program(&common.load_program(&pio_program), &[]);
+
+    pio_config.use_program(&common.load_program(&pio_program), &[&vsync, &hsync, &pclk]);
+    sm.set_config(&pio_config);
+    sm.set_enable(true);
+
     // pio_config.clock_divider = (U56F8!(125_000_000) / U56F8!(10_000)).to_fixed();
 
     info!("After Pio");
