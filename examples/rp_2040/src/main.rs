@@ -32,8 +32,6 @@ async fn main(_spawner: Spawner) {
     let mut i2c = i2c::I2c::new_async(p.I2C0, scl, sda, Irqs, Config::default());
     // let mut i2c = i2c::I2c::new_blocking(p.I2C0, scl, sda, Config::default());
 
-    let _pio = Pio::new(p.PIO0, PioIrqs);
-
     // let mut c: embassy_rp::pwm::Config = get_mclk_pwm_config();
     // let mut pwm = Pwm::new_output_b(p.PWM_SLICE4, p.PIN_10, c.clone());
 
@@ -49,6 +47,13 @@ async fn main(_spawner: Spawner) {
     let hsync_pin = 7;
     let pclk_pin = 8;
     let data_pin_base = 9;
+
+    let pio = p.PIO0;
+    let Pio {
+        mut common,
+        sm0: mut sm,
+        ..
+    } = Pio::new(pio, PioIrqs);
 
     let mut assembler = pio::Assembler::<34>::new();
     let mut wrap_target = assembler.label();
@@ -88,6 +93,11 @@ async fn main(_spawner: Spawner) {
     assembler.jmp(JmpCondition::XDecNonZero, &mut ins_13_target);
     assembler.wait(0, GPIO, hsync_pin, false);
     assembler.bind(&mut wrap_source);
+    let pio_program = assembler.assemble_with_wrap(wrap_source, wrap_target);
+
+    let mut pio_config: embassy_rp::pio::Config<'_, PIO0> = embassy_rp::pio::Config::default();
+    pio_config.use_program(&common.load_program(&pio_program), &[]);
+    // pio_config.clock_divider = (U56F8!(125_000_000) / U56F8!(10_000)).to_fixed();
 
     info!("After Pio");
 
