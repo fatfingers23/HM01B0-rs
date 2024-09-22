@@ -1,6 +1,7 @@
 #![no_std]
 #![no_main]
 
+use defmt::export::u32;
 use defmt::*;
 use embassy_executor::Spawner;
 use embassy_futures::join::join;
@@ -9,7 +10,7 @@ use embassy_rp::i2c::{self, Config, InterruptHandler};
 use embassy_rp::peripherals::I2C0;
 use embassy_rp::peripherals::PIO0;
 use embassy_rp::pio::{Direction, Pio, ShiftConfig, ShiftDirection};
-use embassy_rp::{bind_interrupts, Peripheral};
+use embassy_rp::{bind_interrupts, dma, Peripheral};
 use embassy_time::{Duration, Timer};
 use hm01b0::{DataBits, PictureSize, HM01B0};
 use pio::WaitSource::GPIO;
@@ -40,7 +41,8 @@ async fn main(_spawner: Spawner) {
     info!("Before init");
     let data_bits = DataBits::Bits1;
 
-    let mut hm01b0 = HM01B0::new(&mut i2c, PictureSize::Size320x320, data_bits, None, None).await;
+    let mut hm01b0 = HM01B0::new(&mut i2c, PictureSize::Size160x120, data_bits, None, None).await;
+    hm01b0.set_coarse_integration(2).await;
     info!("After init");
 
     info!("Before Pio");
@@ -88,7 +90,7 @@ async fn main(_spawner: Spawner) {
     assembler.wait(1, GPIO, pclk_pin, false);
     assembler.wait(0, GPIO, pclk_pin, false);
     assembler.jmp(JmpCondition::YDecNonZero, &mut ins_10_target);
-    assembler.jmp(JmpCondition::YDecNonZero, &mut ins_13_target);
+    assembler.bind(&mut ins_13_target);
     assembler.wait(1, GPIO, pclk_pin, false);
     assembler.r#in(InSource::PINS, data_bits.to_u8());
     assembler.wait(0, GPIO, pclk_pin, false);
@@ -96,7 +98,7 @@ async fn main(_spawner: Spawner) {
     assembler.wait(0, GPIO, hsync_pin, false);
     assembler.bind(&mut wrap_source);
     let pio_program = assembler.assemble_with_wrap(wrap_source, wrap_target);
-
+    //
     let vsync = common.make_pio_pin(p.PIN_6);
     let hsync = common.make_pio_pin(p.PIN_7);
     let pclk = common.make_pio_pin(p.PIN_8);
@@ -109,26 +111,52 @@ async fn main(_spawner: Spawner) {
         direction: ShiftDirection::Right,
         auto_fill: true,
     };
+    let pins = &[&vsync, &hsync, &pclk];
+    pio_config.set_in_pins(pins);
+    let program = &common.load_program(&pio_program);
 
-    pio_config.use_program(&common.load_program(&pio_program), &[&vsync, &hsync, &pclk]);
+    // let left = (program.side_set.bits() - program.side_set.optional() as u8) as usize;
+    // let right = pins.len();
+    // info!("{:?} == {:?}", left, right);
+    pio_config.use_program(program, &[]);
     sm.set_config(&pio_config);
     sm.set_enable(true);
-    // pio_config.clock_divider = (U56F8!(125_000_000) / U56F8!(10_000)).to_fixed();
+    sm.clear_fifos();
     info!("After Pio");
     info!("Before dma");
+    //
 
     let mut dma_in_ref = p.DMA_CH0.into_ref();
-
+    let mut dma_out_ref = p.DMA_CH1.into_ref();
+    // //
     let delay = Duration::from_secs(10);
+
     loop {
-        sm.restart();
+        info!("Start of the loop");
+        // sm.restart();
+        //
         hm01b0.write_reg8(0x0100, 0x01).await.unwrap();
+        let result = hm01b0.read_reg8(0x0100).await.unwrap();
+        info!("Camera Mode: {:?}", result);
         let mut din: [u32; 160 * 120] = [0u32; 160 * 120];
+        let mut dout: [u32; 160 * 120] = [0u32; 160 * 120];
+        //
+        // //
 
         let (rx, tx) = sm.rx_tx();
-        rx.dma_pull(dma_in_ref.reborrow(), &mut din).await;
-        info!("{:?}", din);
+
+        //
+        // join(
+        //     tx.dma_push(dma_out_ref.reborrow(), &din),
+        //     rx.dma_pull(dma_in_ref.reborrow(), &mut dout),
+        // )
+        // .await;
         hm01b0.write_reg8(0x0100, 0x00).await.unwrap();
+        // rx.dma_pull(dma_in_ref.reborrow(), &mut dout).await;
+        //
+        // info!("end of read");
+        //
+        // info!("End of loop");
         Timer::after(delay).await;
     }
     // loop {

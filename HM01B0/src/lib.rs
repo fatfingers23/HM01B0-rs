@@ -244,6 +244,22 @@ where
         hm01b0
     }
 
+    pub async fn set_coarse_integration(&mut self, mut lines: u16) {
+        if (lines < 2) {
+            lines = 2;
+        }
+
+        lines -= 2;
+
+        self.write_reg16(Addresses::IntegrationTimeInLines as u16, lines)
+            .await
+            .unwrap();
+
+        self.write_reg16(Addresses::GroupParameterHold as u16, 0x01)
+            .await
+            .unwrap();
+    }
+
     async fn hm01b0_read_frame(
         &mut self,
         pio: &mut Pio<'_, PIO0>,
@@ -348,7 +364,7 @@ where
         Ok(())
     }
 
-    async fn read_reg8(&mut self, address: u16) -> Result<u8, Error> {
+    pub async fn read_reg8(&mut self, address: u16) -> Result<u8, Error> {
         let mut address_bytes = [0u8; 2];
         let mut result = [0xffu8; 1];
 
