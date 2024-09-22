@@ -5,8 +5,10 @@ use crate::Addresses::{ModeSelect, SoftwareReset};
 use defmt::*;
 use embassy_rp::gpio::{Output, Pin};
 use embassy_rp::i2c::Error;
+use embassy_rp::peripherals::{DMA_CH0, PIO0};
+use embassy_rp::pio::{Pio, ShiftConfig, ShiftDirection, StateMachine};
 use embassy_rp::pwm::Pwm;
-use embassy_rp::{pio, pwm};
+use embassy_rp::{dma, pio, pwm, PeripheralRef};
 use embassy_time::{Duration, Timer};
 use embedded_hal::digital::OutputPin;
 use embedded_hal_async::i2c::I2c;
@@ -242,6 +244,56 @@ where
         hm01b0
     }
 
+    async fn hm01b0_read_frame(
+        &mut self,
+        pio: &mut Pio<'_, PIO0>,
+        sm: &mut StateMachine<'_, PIO0, 0>,
+        dma: PeripheralRef<'_, DMA_CH0>,
+        buffer: &mut [u8],
+        width: usize,
+        num_pclk_per_px: usize,
+    ) {
+        // Initialize PIO state machine with HM01B0 program
+        sm.restart();
+        sm.clear_fifos();
+
+        // Configure PIO state machine
+        // let config = ShiftConfig {
+        //     auto_fill: false,
+        //     direction: ShiftDirection::Right,
+        //     threshold: 8,
+        // };
+        // sm. = config;
+        // sm.set_enabled(true);
+        sm.set_enable(true);
+        // Prepare DMA transfer from PIO RX FIFO to the buffer
+        // let dreq = pio.di get_dreq(false); // False for RX direction
+
+        // let dma_config = dma::Config::default()
+        //     .increment_source(false) // PIO RX FIFO, no increment
+        //     .increment_dest(true) // Buffer, increment
+        //     .data_size(dma::WordSize::Byte)
+        //     .dreq(dreq);
+        //
+        // dma.start_transfer(dma_config, pio.rx_fifo(), buffer).await;
+
+        // Push the number of pixels to read into the PIO
+        let pixels_to_read = width * num_pclk_per_px - 1;
+        //     sm.tx().push_blocking(pixels_to_read as u32);
+        //
+        //     // Enable the HM01B0 sensor by writing to its register (simulated here)
+        //     hm01b0_write_reg8(0x0100, 0x01).await; // MODE_SELECT: Enable sensor
+        //
+        //     // Wait for DMA transfer to complete
+        //     yield_now().await; // To give control to the executor while waiting
+        //
+        //     // Disable the PIO state machine after DMA completes
+        //     sm.set_enabled(false);
+        //
+        //     // Disable the HM01B0 sensor (simulated here)
+        //     hm01b0_write_reg8(0x0100, 0x00).await; // MODE_SELECT: Disable sensor
+    }
+
     async fn reset(&mut self) {
         self.write_reg8(SoftwareReset as u16, 0x01).await.unwrap();
 
@@ -313,7 +365,7 @@ where
         Ok(result[0])
     }
 
-    async fn write_reg8(&mut self, address: u16, value: u8) -> Result<(), Error> {
+    pub async fn write_reg8(&mut self, address: u16, value: u8) -> Result<(), Error> {
         let mut data = [0u8; 3];
 
         // Write the 16-bit address in big-endian format

@@ -3,13 +3,14 @@
 
 use defmt::*;
 use embassy_executor::Spawner;
-use embassy_rp::bind_interrupts;
+use embassy_futures::join::join;
 use embassy_rp::gpio::Level;
 use embassy_rp::i2c::{self, Config, InterruptHandler};
 use embassy_rp::peripherals::I2C0;
 use embassy_rp::peripherals::PIO0;
-use embassy_rp::pio::{Direction, Pio};
-use embassy_time::Duration;
+use embassy_rp::pio::{Direction, Pio, ShiftConfig, ShiftDirection};
+use embassy_rp::{bind_interrupts, Peripheral};
+use embassy_time::{Duration, Timer};
 use hm01b0::{DataBits, PictureSize, HM01B0};
 use pio::WaitSource::GPIO;
 use pio::{InSource, JmpCondition, MovDestination, MovOperation, MovSource, SetDestination};
@@ -39,7 +40,7 @@ async fn main(_spawner: Spawner) {
     info!("Before init");
     let data_bits = DataBits::Bits1;
 
-    let hm01b0 = HM01B0::new(&mut i2c, PictureSize::Size320x320, data_bits, None, None).await;
+    let mut hm01b0 = HM01B0::new(&mut i2c, PictureSize::Size320x320, data_bits, None, None).await;
     info!("After init");
 
     info!("Before Pio");
@@ -61,10 +62,10 @@ async fn main(_spawner: Spawner) {
     let mut wrap_source = assembler.label();
 
     let mut ins_4_target = assembler.label();
-    let mut ins_4_source = assembler.label();
+    let mut _ins_4_source = assembler.label();
 
     let mut ins_10_target = assembler.label();
-    let mut ins_10_source = assembler.label();
+    let mut _ins_10_source = assembler.label();
 
     let mut ins_13_target = assembler.label();
 
@@ -103,16 +104,33 @@ async fn main(_spawner: Spawner) {
     sm.set_pin_dirs(Direction::Out, &[&vsync, &hsync, &pclk]);
     let mut pio_config: embassy_rp::pio::Config<'_, PIO0> = embassy_rp::pio::Config::default();
 
+    pio_config.shift_in = ShiftConfig {
+        threshold: 8,
+        direction: ShiftDirection::Right,
+        auto_fill: true,
+    };
+
     pio_config.use_program(&common.load_program(&pio_program), &[&vsync, &hsync, &pclk]);
     sm.set_config(&pio_config);
     sm.set_enable(true);
-
     // pio_config.clock_divider = (U56F8!(125_000_000) / U56F8!(10_000)).to_fixed();
-
     info!("After Pio");
+    info!("Before dma");
 
-    let delay = Duration::from_secs(1);
+    let mut dma_in_ref = p.DMA_CH0.into_ref();
 
+    let delay = Duration::from_secs(10);
+    loop {
+        sm.restart();
+        hm01b0.write_reg8(0x0100, 0x01).await.unwrap();
+        let mut din: [u32; 160 * 120] = [0u32; 160 * 120];
+
+        let (rx, tx) = sm.rx_tx();
+        rx.dma_pull(dma_in_ref.reborrow(), &mut din).await;
+        info!("{:?}", din);
+        hm01b0.write_reg8(0x0100, 0x00).await.unwrap();
+        Timer::after(delay).await;
+    }
     // loop {
     //     info!("I work");
     //     Timer::after(delay).await;
