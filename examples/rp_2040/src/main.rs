@@ -65,62 +65,82 @@ async fn main(_spawner: Spawner) {
         ..
     } = Pio::new(pio, PioIrqs);
 
-    let mut assembler = Assembler::<32>::new();
-    let mut wrap_target = assembler.label();
-    let mut wrap_source = assembler.label();
+    // let mut assembler = Assembler::<32>::new();
+    // let mut wrap_target = assembler.label();
+    // let mut wrap_source = assembler.label();
+    //
+    // let mut ins_4_target = assembler.label();
+    // let mut ins_10_target = assembler.label();
+    // let mut ins_13_target = assembler.label();
+    //
+    // assembler.pull(false, true);
+    // assembler.wait(0, GPIO, vsync_pin, false);
+    // assembler.wait(1, GPIO, vsync_pin, false);
+    // assembler.set(SetDestination::Y, num_border_px - 1);
+    // assembler.bind(&mut ins_4_target);
+    // assembler.wait(1, GPIO, hsync_pin, false);
+    // assembler.wait(0, GPIO, hsync_pin, false);
+    // assembler.jmp(JmpCondition::YDecNonZero, &mut ins_4_target);
+    // assembler.bind(&mut wrap_target);
+    // assembler.mov(MovDestination::X, MovOperation::None, MovSource::OSR);
+    // assembler.bind(&mut ins_10_target);
+    // assembler.wait(1, GPIO, hsync_pin, false);
+    // assembler.set(
+    //     SetDestination::Y,
+    //     (num_border_px * hm01b0.num_pclk_per_px - 1) as u8,
+    // );
+    // assembler.wait(1, GPIO, pclk_pin, false);
+    // assembler.wait(0, GPIO, pclk_pin, false);
+    // assembler.jmp(JmpCondition::YDecNonZero, &mut ins_10_target);
+    // assembler.bind(&mut ins_13_target);
+    // assembler.wait(1, GPIO, pclk_pin, false);
+    // assembler.r#in(InSource::PINS, data_bits.to_u8());
+    // assembler.wait(0, GPIO, pclk_pin, false);
+    // assembler.jmp(JmpCondition::XDecNonZero, &mut ins_13_target);
+    // assembler.wait(0, GPIO, hsync_pin, false);
+    // assembler.bind(&mut wrap_source);
+    // let pio_program = assembler.assemble_with_wrap(wrap_source, wrap_target);
 
-    let mut ins_4_target = assembler.label();
-    let mut ins_10_target = assembler.label();
-    let mut ins_13_target = assembler.label();
-
-    assembler.pull(false, true);
-    assembler.wait(0, GPIO, vsync_pin, false);
-    assembler.wait(1, GPIO, vsync_pin, false);
-    assembler.set(SetDestination::Y, num_border_px - 1);
-    assembler.bind(&mut ins_4_target);
-    assembler.wait(1, GPIO, hsync_pin, false);
-    assembler.wait(0, GPIO, hsync_pin, false);
-    assembler.jmp(JmpCondition::YDecNonZero, &mut ins_4_target);
-    assembler.bind(&mut wrap_target);
-    assembler.mov(MovDestination::X, MovOperation::None, MovSource::OSR);
-    assembler.bind(&mut ins_10_target);
-    assembler.wait(1, GPIO, hsync_pin, false);
-    assembler.set(
-        SetDestination::Y,
-        (num_border_px * hm01b0.num_pclk_per_px - 1) as u8,
+    use pio_proc::pio_asm;
+    let program_with_defines = pio_proc::pio_asm!(
+      ".wrap_target",
+    "pull noblock",
+    "wait 0 gpio 6",
+    "wait 1 gpio 6",
+    "set y, 1",
+    "wait 1 gpio 7",
+    "wait 0 gpio 7",
+    "jmp y--, 4",
+    "mov x, osr",
+    "wait 1 gpio 7",
+    "set y, 15",
+    "wait 1 gpio 8",
+    "wait 0 gpio 8",
+    "jmp y--, 10",
+    "wait 1 gpio 8",
+    "in pins, 1",
+    "wait 0 gpio 8",
+    "jmp x--, 13",
+    "wait 0 gpio 7",
+    ".wrap"
+        options(max_program_size = 32) // Optional, defaults to 32
     );
-    assembler.wait(1, GPIO, pclk_pin, false);
-    assembler.wait(0, GPIO, pclk_pin, false);
-    assembler.jmp(JmpCondition::YDecNonZero, &mut ins_10_target);
-    assembler.bind(&mut ins_13_target);
-    assembler.wait(1, GPIO, pclk_pin, false);
-    assembler.r#in(InSource::PINS, data_bits.to_u8());
-    assembler.wait(0, GPIO, pclk_pin, false);
-    assembler.jmp(JmpCondition::XDecNonZero, &mut ins_13_target);
-    assembler.wait(0, GPIO, hsync_pin, false);
-    assembler.bind(&mut wrap_source);
-    let pio_program = assembler.assemble_with_wrap(wrap_source, wrap_target);
-    pio_program.code.iter().for_each(|x| {
-        info!("{:?}", x);
-    });
+    let program = program_with_defines.program;
 
     // pio_program.wrap.target;
 
     // Load the PIO program into the PIO block
     let mut cfg = embassy_rp::pio::Config::default();
 
-    cfg.use_program(&common.load_program(&pio_program), &[]);
-    cfg.clock_divider = (U56F8!(125_000_000) / U56F8!(10_000)).to_fixed();
+    cfg.use_program(&common.load_program(&program), &[]);
+
+    // cfg.clock_divider = (U56F8!(125_000_000) / U56F8!(10_000)).to_fixed();
+    cfg.clock_divider = 3.472.to_fixed();
     cfg.shift_in = ShiftConfig {
         auto_fill: true,
-        threshold: 32,
+        threshold: 8,
         direction: ShiftDirection::Right,
     };
-    // cfg.shift_out = ShiftConfig {
-    //     auto_fill: true,
-    //     threshold: 32,
-    //     direction: ShiftDirection::Left,
-    // };
 
     sm.set_config(&cfg);
     sm.set_enable(true);
@@ -131,7 +151,9 @@ async fn main(_spawner: Spawner) {
     let hsync = common.make_pio_pin(p.PIN_7);
     let pclk = common.make_pio_pin(p.PIN_8);
     sm.set_pin_dirs(Direction::In, &[&vsync, &hsync, &pclk]);
+    cfg.set_in_pins(&[&common.make_pio_pin(p.PIN_9)]);
 
+    // sm.set_pins()
     // Configure DMA
     // PIO and DMA configuration
     let mut dma_out_ref = p.DMA_CH0.into_ref();
@@ -139,16 +161,33 @@ async fn main(_spawner: Spawner) {
     let length = 160 * 120; // Assuming 160x120 image size for the example
     let mut buffer: [u8; 160 * 120] = [0; 160 * 120];
 
-    // loop {
-    sm.restart();
-    info!("before dma read");
-    info!("{:?}", sm.is_enabled());
-    let rx = sm.rx();
-    let is_it_full = rx.empty();
-    let idk = rx.try_pull();
-    info!("{:?}", idk);
+    loop {
+        sm.restart();
+        hm01b0.write_reg8(0x0100, 0x01).await.unwrap();
 
-    // rx.wait_pull(dma_in_ref.reborrow(), &mut buffer).await;
-    // info!("its working?");
-    // }
+        info!("before dma read");
+
+        let rx = sm.rx();
+        info!("Empty: {:?}", rx.empty());
+        let idk = rx.try_pull();
+        info!("{:?}", idk);
+
+        rx.dma_pull(dma_in_ref.reborrow(), &mut buffer).await;
+        info!("its working?");
+        info!("{:?}", buffer[0]);
+
+        for y in (0..120).step_by(2) {
+            // Map each pixel in the row to an ASCII character, and send the row over stdio
+            info!("\x1B[{}H", y / 2);
+            // let mut row = String::with_capacity(160);
+
+            // for x in 0..160 {
+            //     let pixel = pixels[160 * y + x];
+            //     row.push(remap[pixel as usize]);
+            // }
+            // print!("{}\x1B[K", row);
+            // stdout.flush().unwrap(); // Ensure the output is flushed immediately
+        }
+        // print!("\x1B[J");
+    }
 }
