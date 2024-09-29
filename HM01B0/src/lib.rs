@@ -1,20 +1,18 @@
 #![no_std]
 
-// use embassy_rp::peripherals::{PIO0, PIO1};
 use crate::Addresses::{ModeSelect, SoftwareReset};
 use defmt::*;
-use embassy_rp::gpio::{Output, Pin};
+use embassy_rp::gpio::Output;
+use embassy_rp::gpio::Pin;
 use embassy_rp::i2c::Error;
 use embassy_rp::peripherals::{DMA_CH0, PIO0};
-use embassy_rp::pio::{Pio, ShiftConfig, ShiftDirection, StateMachine};
+use embassy_rp::pio::{Pio, StateMachine};
 use embassy_rp::pwm::Pwm;
-use embassy_rp::{dma, pio, pwm, PeripheralRef};
+use embassy_rp::{pwm, PeripheralRef};
 use embassy_time::{Duration, Timer};
-use embedded_hal::digital::OutputPin;
 use embedded_hal_async::i2c::I2c;
+use export::debug;
 use fixed::prelude::ToFixed;
-use fixed::types::extra::U4;
-use fixed::FixedU16;
 
 const HM01B0_ADDR: u8 = 0x24;
 
@@ -181,7 +179,18 @@ where
             DataBits::Bits1 => 0x22,
         };
 
-        //Set camera config to the device
+        //Print config values as u8 not hex
+
+        debug!("Bit Control: {:?}", bit_control);
+        debug!("Readout X: {:?}", config.readout_x_val);
+        debug!("Readout Y: {:?}", config.readout_y_val);
+        debug!("Binning Mode: {:?}", config.binning_mode_val);
+        debug!("QVGA Enable: {:?}", config.qvga_win_en_val);
+        debug!("Frame Length Lines: {:?}", config.frame_length_lines_val);
+        debug!("Line Length PCLK: {:?}", config.line_length_pclk_val);
+        debug!("INTEGRATION_H: {:?}", config.line_length_pclk_val / 2);
+
+        // //Set camera config to the device
         hm01b0
             .write_reg8(Addresses::BitControl as u16, bit_control)
             .await
@@ -350,6 +359,10 @@ where
         Ok(result)
     }
 
+    fn reverse_u16(&mut self, value: u16) -> u16 {
+        (value << 8) | (value >> 8)
+    }
+
     async fn write_reg16(&mut self, address: u16, value: u16) -> Result<(), Error> {
         let mut data = [0u8; 4];
 
@@ -384,14 +397,23 @@ where
     pub async fn write_reg8(&mut self, address: u16, value: u8) -> Result<(), Error> {
         let mut data = [0u8; 3];
 
-        // Write the 16-bit address in big-endian format
-        data[0] = (address >> 8) as u8; // High byte
-        data[1] = (address & 0xFF) as u8; // Low byte
+        // Reverse the 16-bit address to match the __REV16 behavior in C
+        data[0] = (address >> 8) as u8; // High byte of address
+        data[1] = (address & 0xFF) as u8; // Low byte of address
 
-        // Add the 8-bit value to the buffer
+        // Write the 8-bit value
         data[2] = value;
 
-        self.i2c.write(HM01B0_ADDR, &data).await.unwrap();
+        // Debugging: print the binary of data (similar to C code)
+
+        // for i in 0..3 {
+        //     info!("{:08b}", data[i]);
+        // }
+
+        self.i2c
+            .write(HM01B0_ADDR, &[address as u8, value])
+            .await
+            .unwrap();
         Ok(())
     }
 }
